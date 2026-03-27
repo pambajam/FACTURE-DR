@@ -57,7 +57,7 @@
 
 <div id="facture-container">
     <div class="header">
-        <img src="logo.png" alt="Logo Powerload" class="logo-img" onerror="this.style.display='none';">
+        <img src="https://github.com/pambajam/FACTURE-DR/blob/main/logo.png?raw=true" alt="Logo Powerload" class="logo-img">
         <div style="font-size: 11px; font-weight: bold;">Association Loi 1901 - RNA : W442027140</div>
     </div>
 
@@ -78,13 +78,13 @@
         <tr>
             <td>Montant de la prestation (€)</td>
             <td style="text-align: right;">
-                <input type="text" id="prestation" class="input-montant" inputmode="decimal" value="0">
+                <input type="text" id="prestation" class="input-montant" inputmode="decimal" value="0" oninput="updateCalcul()">
             </td>
         </tr>
         <tr>
             <td>Acompte déjà versé (€)</td>
             <td style="text-align: right;">
-                <input type="text" id="acompte" class="input-montant" inputmode="decimal" value="0">
+                <input type="text" id="acompte" class="input-montant" inputmode="decimal" value="0" oninput="updateCalcul()">
             </td>
         </tr>
         <tr class="total-box">
@@ -96,7 +96,7 @@
     <div class="signature-zone">
         <strong>Stéphane Desideri</strong><br>
         <span style="font-size: 0.9em; color: #666;">Trésorier POWERLOAD</span><br>
-        <img src="signature.png" alt="Signature" class="signature-img" onerror="this.style.display='none';">
+        <img src="https://github.com/pambajam/FACTURE-DR/blob/main/signature.png?raw=true" alt="Signature" class="signature-img">
     </div>
 
     <div class="footer">
@@ -108,73 +108,68 @@
 <button id="btn-pdf">GÉNÉRER LE PDF</button>
 
 <script>
-    // --- CONFIGURATION GOOGLE ---
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwkvKNBjFBfrmcin6_HWYIdEdGvag2sSY6yrNLRaRG3PsoouQz_cboZ2aBozMos0wE/exec"; 
 
-    // --- INITIALISATION ---
     window.onload = function() {
-        // Date du jour automatique
         document.getElementById('date-display').innerText = "Le " + new Date().toLocaleDateString('fr-FR', {day:'numeric', month:'long', year:'numeric'});
 
-        // Appel au compteur Google Sheets (Anti-cache intégré)
-        if(SCRIPT_URL.includes("https")) {
-            fetch(SCRIPT_URL + "?t=" + Date.now())
-                .then(r => r.json())
-                .then(data => {
-                    if(data.numero) {
-                        document.getElementById('num-facture').value = "2026-" + data.numero.toString().padStart(3, '0');
-                    }
-                })
-                .catch(e => {
-                    document.getElementById('num-facture').value = "2026-Manuel";
-                });
-        }
+        fetch(SCRIPT_URL + "?t=" + Date.now())
+            .then(r => r.json())
+            .then(data => {
+                if(data.numero) {
+                    document.getElementById('num-facture').value = "2026-" + data.numero.toString().padStart(3, '0');
+                }
+            })
+            .catch(() => { document.getElementById('num-facture').value = "2026-Manuel"; });
     };
 
-    // --- CALCULS EN TEMPS RÉEL ---
+    // --- CALCULS (Gestion point et virgule) ---
     function updateCalcul() {
-        var p = parseFloat(document.getElementById('prestation').value.replace(',', '.')) || 0;
-        var a = parseFloat(document.getElementById('acompte').value.replace(',', '.')) || 0;
-        var total = p - a;
-        document.getElementById('montant-restant').innerHTML = total.toLocaleString('fr-FR', {minimumFractionDigits: 2});
+        const parseVal = (id) => {
+            let v = document.getElementById(id).value.replace(',', '.').replace(/\s/g, '');
+            return parseFloat(v) || 0;
+        };
+        const total = parseVal('prestation') - parseVal('acompte');
+        document.getElementById('montant-restant').innerText = total.toLocaleString('fr-FR', {minimumFractionDigits: 2});
     }
-    setInterval(updateCalcul, 400); // Mise à jour fluide sur Android
 
-    // --- API ADRESSE ---
-    const addrInput = document.getElementById('adresse-input');
-    const sugList = document.getElementById('suggestions');
-    addrInput.addEventListener('input', function() {
+    // --- API ADRESSE AVEC DÉLAI (Anti-surcharge) ---
+    let addrTimer;
+    document.getElementById('adresse-input').addEventListener('input', function() {
+        const sugList = document.getElementById('suggestions');
+        clearTimeout(addrTimer);
         if (this.value.length < 5) { sugList.style.display = 'none'; return; }
-        fetch('https://api-adresse.data.gouv.fr/search/?q=' + encodeURIComponent(this.value) + '&limit=5')
-            .then(r => r.json()).then(data => {
-                sugList.innerHTML = '';
-                if (data.features && data.features.length > 0) {
-                    sugList.style.display = 'block';
-                    data.features.forEach(f => {
-                        const li = document.createElement('li');
-                        li.textContent = f.properties.label;
-                        li.onclick = () => { addrInput.value = f.properties.label; sugList.style.display = 'none'; };
-                        sugList.appendChild(li);
-                    });
-                }
-            });
+
+        addrTimer = setTimeout(() => {
+            fetch('https://api-adresse.data.gouv.fr/search/?q=' + encodeURIComponent(this.value) + '&limit=5')
+                .then(r => r.json()).then(data => {
+                    sugList.innerHTML = '';
+                    if (data.features?.length > 0) {
+                        sugList.style.display = 'block';
+                        data.features.forEach(f => {
+                            const li = document.createElement('li');
+                            li.textContent = f.properties.label;
+                            li.onclick = () => { 
+                                document.getElementById('adresse-input').value = f.properties.label; 
+                                sugList.style.display = 'none'; 
+                            };
+                            sugList.appendChild(li);
+                        });
+                    }
+                });
+        }, 300);
     });
 
-    // --- GÉNÉRATION PDF & NOM DE FICHIER ---
+    // --- GÉNÉRATION PDF ---
     document.getElementById('btn-pdf').onclick = function() {
         const num = document.getElementById('num-facture').value;
         const client = document.getElementById('client-name').value || "Client";
-        
-        // Nettoyage du nom pour le nom de fichier PDF
         const cleanClient = client.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/gi, '_');
         
-        // On change le titre de la fenêtre temporairement
         const originalTitle = document.title;
         document.title = "Facture_" + num + "_" + cleanClient;
 
         window.print();
-
-        // On rétablit le titre après l'impression
         setTimeout(() => { document.title = originalTitle; }, 2000);
     };
 </script>
